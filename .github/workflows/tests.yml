@@ -25,3 +25,4 @@ jobs:
           python -B -m unittest -v test_core_result_envelope
           python -B -m unittest -v test_result_envelope_red_team
           python -B -m unittest -v test_result_envelope_v2_contract
+          python -B -m unittest -v test_result_envelope_v2_golden_vectors
