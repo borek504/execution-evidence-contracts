@@ -23,6 +23,7 @@ HASH_PROTOCOL_V2 = "execution-result-envelope-hash-v1"
 HASH_DOMAIN_V2 = b"EXECUTION-EVIDENCE-CONTRACTS\x00RESULT-ENVELOPE\x00V2\x00"
 
 MAX_CANONICAL_BYTES = 262_144
+MAX_JSON_INPUT_BYTES = 1_048_576
 MAX_NESTING_DEPTH = 16
 MAX_OBJECT_KEYS = 128
 MAX_COLLECTION_ITEMS = 256
@@ -129,7 +130,10 @@ def _parse_wire_timestamp(value: Any) -> tuple[datetime | None, str | None]:
         return None, "TIME_NFC_INVALID"
     if len(value.encode("utf-8")) > MAX_STRING_BYTES:
         return None, "STRING_LIMIT"
-    return parsed.astimezone(timezone.utc), None
+    normalized = parsed.astimezone(timezone.utc)
+    if value != normalized.isoformat():
+        return None, "TIME_CANONICAL_INVALID"
+    return normalized, None
 
 
 def _u64(value: int) -> bytes:
@@ -196,33 +200,16 @@ def canonical_bytes_v2(value: Any) -> bytes:
     return encoded
 
 
-def _fallback_invalid_bytes(value: Any) -> bytes:
-    """Stable diagnostic bytes for deliberately invalid JSON-shaped values.
-
-    This fallback lets tests and review tooling re-hash an invalid envelope after
-    mutation. Validation still rejects the invalid data; a matching hash never
-    upgrades invalid data into a valid envelope.
-    """
-    try:
-        text = json.dumps(
-            value,
-            ensure_ascii=False,
-            sort_keys=True,
-            separators=(",", ":"),
-            allow_nan=True,
-            default=lambda obj: {"__unsupported_type__": type(obj).__name__},
-        )
-    except Exception:
-        text = repr(value)
-    return b"INVALID\x00" + text.encode("utf-8", "backslashreplace")
-
-
 def hash_unsigned_envelope_v2(envelope: Mapping[str, Any]) -> str:
+    """Return the protocol hash only for canonical v2-shaped data.
+
+    There is intentionally no invalid-data fallback. Noncanonical data does not
+    receive a protocol hash under this API.
+    """
+    if not isinstance(envelope, Mapping):
+        raise TypeError("RESULT_ENVELOPE_MAPPING_REQUIRED")
     unsigned = {key: value for key, value in dict(envelope).items() if key != "result_hash"}
-    try:
-        payload = canonical_bytes_v2(unsigned)
-    except _CanonicalError:
-        payload = _fallback_invalid_bytes(unsigned)
+    payload = canonical_bytes_v2(unsigned)
     return sha256(HASH_DOMAIN_V2 + payload).hexdigest()
 
 
@@ -242,11 +229,18 @@ def _json_object_pairs(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
 
 def decode_result_envelope_v2_json(text_or_bytes: str | bytes) -> Any:
     if isinstance(text_or_bytes, bytes):
+        if len(text_or_bytes) > MAX_JSON_INPUT_BYTES:
+            raise ValueError("JSON_INPUT_SIZE_LIMIT")
         try:
             text = text_or_bytes.decode("utf-8")
         except UnicodeDecodeError as exc:
             raise ValueError("INVALID_UTF8") from exc
     elif type(text_or_bytes) is str:
+        if len(text_or_bytes) > MAX_JSON_INPUT_BYTES:
+            raise ValueError("JSON_INPUT_SIZE_LIMIT")
+        encoded = text_or_bytes.encode("utf-8")
+        if len(encoded) > MAX_JSON_INPUT_BYTES:
+            raise ValueError("JSON_INPUT_SIZE_LIMIT")
         text = text_or_bytes
     else:
         raise TypeError("JSON_TEXT_REQUIRED")
@@ -374,7 +368,8 @@ def _validate_reference_list(value: Any, field: str, issues: list[str]) -> None:
         identity_issue = _identity_issue(ref.get("reference_id"), prefix + ".reference_id")
         if identity_issue:
             _add(issues, "REFERENCE_ID_INVALID:" + prefix)
-        if ref.get("reference_type") not in REFERENCE_TYPES_V2:
+        reference_type = ref.get("reference_type")
+        if type(reference_type) is not str or reference_type not in REFERENCE_TYPES_V2:
             _add(issues, "REFERENCE_TYPE_INVALID:" + prefix)
         digest = ref.get("sha256")
         if type(digest) is not str or _SHA256_RE.fullmatch(digest) is None:
@@ -428,30 +423,20 @@ def _map_canonical_error(code: str) -> str:
     return "CANONICAL_DATA_INVALID:" + code
 
 
-def _approx_serialized_size(value: Any) -> int | None:
-    try:
-        text = json.dumps(
-            value,
-            ensure_ascii=False,
-            sort_keys=True,
-            separators=(",", ":"),
-            allow_nan=True,
-            default=lambda obj: repr(obj),
-        )
-        return len(text.encode("utf-8"))
-    except Exception:
-        return None
-
-
 def validate_result_envelope_v2(envelope: Any) -> dict[str, Any]:
     issues: list[str] = []
     if type(envelope) is not dict:
         return {"ok": False, "issues": ["RESULT_ENVELOPE_INVALID"]}
 
-    keys = set(envelope)
-    for key in sorted(keys - REQUIRED_FIELDS_V2):
+    string_keys: set[str] = set()
+    for key in envelope:
+        if type(key) is not str:
+            _add(issues, "TOP_LEVEL_KEY_TYPE_INVALID")
+        else:
+            string_keys.add(key)
+    for key in sorted(string_keys - REQUIRED_FIELDS_V2):
         _add(issues, f"UNKNOWN_FIELD:{key}")
-    for key in sorted(REQUIRED_FIELDS_V2 - keys):
+    for key in sorted(REQUIRED_FIELDS_V2 - string_keys):
         _add(issues, f"MISSING_FIELD:{key}")
 
     if envelope.get("protocol_version") != PROTOCOL_VERSION_V2:
@@ -460,9 +445,11 @@ def validate_result_envelope_v2(envelope: Any) -> dict[str, Any]:
         _add(issues, "ENVELOPE_VERSION_UNSUPPORTED")
     if envelope.get("hash_protocol") != HASH_PROTOCOL_V2:
         _add(issues, "HASH_PROTOCOL_UNSUPPORTED")
-    if envelope.get("result_kind") not in RESULT_KINDS_V2:
+    result_kind = envelope.get("result_kind")
+    if type(result_kind) is not str or result_kind not in RESULT_KINDS_V2:
         _add(issues, "RESULT_KIND_INVALID")
-    if envelope.get("status") not in RESULT_STATUSES_V2:
+    status = envelope.get("status")
+    if type(status) is not str or status not in RESULT_STATUSES_V2:
         _add(issues, "STATUS_INVALID")
 
     for field in ("result_id", "mission_id", "attempt_id", "unit_id", "agent_id", "capability"):
@@ -499,21 +486,24 @@ def validate_result_envelope_v2(envelope: Any) -> dict[str, Any]:
     _validate_text_list(envelope.get("limitations"), "limitations", issues)
 
     unsigned = {key: value for key, value in envelope.items() if key != "result_hash"}
-    approximate_size = _approx_serialized_size(unsigned)
-    if approximate_size is not None and approximate_size > MAX_CANONICAL_BYTES:
-        _add(issues, "ENVELOPE_SIZE_LIMIT")
+    canonical_ok = True
     try:
         canonical_bytes_v2(unsigned)
     except _CanonicalError as exc:
+        canonical_ok = False
         _add(issues, _map_canonical_error(exc.code))
 
     result_hash = envelope.get("result_hash")
     if type(result_hash) is not str or _SHA256_RE.fullmatch(result_hash) is None:
         _add(issues, "HASH_FORMAT_INVALID")
-    else:
-        expected_hash = hash_unsigned_envelope_v2(envelope)
-        if result_hash != expected_hash:
-            _add(issues, "HASH_BINDING_INVALID")
+    elif canonical_ok:
+        try:
+            expected_hash = hash_unsigned_envelope_v2(envelope)
+        except (TypeError, ValueError):
+            _add(issues, "HASH_INPUT_INVALID")
+        else:
+            if result_hash != expected_hash:
+                _add(issues, "HASH_BINDING_INVALID")
 
     return {"ok": not issues, "issues": issues}
 
@@ -530,8 +520,14 @@ def validate_result_binding_v2(
         _check_string(expected_unit_id, identity=True)
     except (TypeError, ValueError):
         return {"ok": False, "issues": ["EXPECTED_BINDING_INVALID"]}
-    if type(envelope) is not dict:
-        return {"ok": False, "issues": ["RESULT_ENVELOPE_INVALID"]}
+
+    validation = validate_result_envelope_v2(envelope)
+    if not validation["ok"]:
+        return {
+            "ok": False,
+            "issues": ["ENVELOPE_INVALID"] + list(validation["issues"]),
+        }
+
     if envelope.get("attempt_id") != expected_attempt_id:
         _add(issues, "ATTEMPT_BINDING_MISMATCH")
     if envelope.get("unit_id") != expected_unit_id:
