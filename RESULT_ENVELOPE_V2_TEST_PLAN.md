@@ -1,14 +1,15 @@
 # Result Envelope v2 test-first plan
 
-Status: **tests first / implementation absent / not merge-authorized**.
+Status: **implementation candidate present / executable tests blocking / not merge-authorized**.
 
-This document freezes the initial API surface and deterministic limits that the
-new `test_result_envelope_v2_contract.py` expects. The goal is to make the
-fail-closed contract reviewable before implementation exists.
+This document freezes the initial API surface and deterministic limits enforced by
+`test_result_envelope_v2_contract.py`. The contract tests were committed before
+the implementation. A candidate `result_envelope_v2.py` now exists, and CI runs
+the v2 suite as a real blocker on Python 3.12 and 3.13.
 
 ## Expected module API
 
-The future module is `result_envelope_v2.py` and must export:
+The module is `result_envelope_v2.py` and exports:
 
 - `build_result_envelope_v2(...) -> dict`
 - `validate_result_envelope_v2(envelope) -> {"ok": bool, "issues": list[str]}`
@@ -38,23 +39,21 @@ protocol version change. The implementation must not silently widen them.
 
 ## Test-first rule
 
-`test_result_envelope_v2_contract.py` intentionally imports a module that does
-not exist yet. Until the implementation commit lands, CI only syntax-compiles
-that test file and does **not** execute it. This preserves green regression CI
-for v1 while keeping the future v2 acceptance contract visible in the PR.
+`test_result_envelope_v2_contract.py` was committed before the implementation so
+the desired fail-closed behavior was reviewable before code could make it green.
 
-When implementation starts, the workflow must be changed in the same PR to run:
+Now that `result_envelope_v2.py` exists, CI executes:
 
 ```text
 python -B -m unittest -v test_result_envelope_v2_contract
 ```
 
-At that point any failing v2 test is a real blocker; tests must not be removed,
-weakened, marked expected-failure, or skipped merely to make the build green.
+Any failing v2 test is a real blocker. Tests must not be removed, weakened,
+marked expected-failure, or skipped merely to make the build green.
 
 ## Negative behavior covered
 
-The initial contract test suite requires rejection of:
+The current contract test suite requires rejection of:
 
 1. unknown and missing top-level fields,
 2. finite floats, NaN and infinities,
@@ -73,9 +72,23 @@ The initial contract test suite requires rejection of:
 15. lowercase wire status/kind that would require silent normalization,
 16. validator input mutation or nondeterministic results.
 
+## Current implementation checkpoint
+
+The first implementation candidate passes the complete v2 contract suite on both
+Python 3.12 and 3.13 together with the existing v1 and execution-contract suites.
+That is conformance evidence only; it is not final protocol acceptance.
+
+Still required before merge consideration:
+
+- freeze/publish golden hash vectors,
+- reproduce them with an independent second implementation,
+- review canonicalization and invalid-envelope diagnostic hashing,
+- perform an independent security review,
+- keep the PR in draft until those gates are complete.
+
 ## Important boundary
 
-Passing this suite will prove only conformance to the proposed v2 data contract.
-It will not authenticate evidence, prove independent observation, prove process
+Passing this suite proves only conformance to the proposed v2 data contract. It
+does not authenticate evidence, prove independent observation, prove process
 termination or isolation, prevent replay at the storage layer, or grant release
 authority.
