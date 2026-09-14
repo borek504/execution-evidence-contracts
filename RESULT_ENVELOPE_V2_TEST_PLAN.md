@@ -51,6 +51,18 @@ python -B -m unittest -v test_result_envelope_v2_contract
 Any failing v2 test is a real blocker. Tests must not be removed, weakened,
 marked expected-failure, or skipped merely to make the build green.
 
+The golden-vector checkpoint is separately executable:
+
+```text
+python -B -m unittest -v test_result_envelope_v2_golden_vectors
+```
+
+The frozen machine-readable vectors live in
+`RESULT_ENVELOPE_V2_GOLDEN_VECTORS.json`. The golden-vector test contains a
+second canonical encoder that independently reproduces the selected canonical
+byte digests and domain-separated result hashes before checking the production
+encoder against the same values.
+
 ## Negative behavior covered
 
 The current contract test suite requires rejection of:
@@ -72,23 +84,42 @@ The current contract test suite requires rejection of:
 15. lowercase wire status/kind that would require silent normalization,
 16. validator input mutation or nondeterministic results.
 
+## Golden-vector checkpoint
+
+Three candidate vectors are frozen for review:
+
+- `baseline_generic`
+- `unicode_nested_research`
+- `int64_and_utf8_ordering`
+
+They cover the baseline envelope, NFC Unicode, nested canonical values, typed
+references, signed integers including int64 endpoints, booleans/null, and UTF-8
+object-key ordering. The vector file records canonical byte lengths,
+`SHA256(canonical_bytes)`, and final domain-separated result hashes.
+
+The vectors are not implementation-owned fixtures. Once accepted, changing an
+expected digest merely to fit a changed encoder is prohibited; such a change
+requires an explicit hash-protocol/version decision.
+
 ## Current implementation checkpoint
 
-The first implementation candidate passes the complete v2 contract suite on both
-Python 3.12 and 3.13 together with the existing v1 and execution-contract suites.
-That is conformance evidence only; it is not final protocol acceptance.
+The implementation candidate passes the complete v2 contract suite and the
+three golden-vector checks on both Python 3.12 and 3.13 together with the
+existing v1 and execution-contract suites. That is conformance and selected
+cross-implementation determinism evidence only; it is not final protocol
+acceptance.
 
 Still required before merge consideration:
 
-- freeze/publish golden hash vectors,
-- reproduce them with an independent second implementation,
-- review canonicalization and invalid-envelope diagnostic hashing,
-- perform an independent security review,
+- review binary canonicalization and resource-limit behavior,
+- review duplicate-key / NFC parsing behavior,
+- review invalid-envelope diagnostic hashing,
+- perform independent security review,
 - keep the PR in draft until those gates are complete.
 
 ## Important boundary
 
-Passing this suite proves only conformance to the proposed v2 data contract. It
-does not authenticate evidence, prove independent observation, prove process
-termination or isolation, prevent replay at the storage layer, or grant release
-authority.
+Passing these suites proves only conformance to the proposed v2 data contract and
+deterministic agreement on selected vectors. It does not authenticate evidence,
+prove independent observation, prove process termination or isolation, prevent
+replay at the storage layer, or grant release authority.
