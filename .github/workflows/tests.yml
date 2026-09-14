@@ -26,3 +26,4 @@ jobs:
           python -B -m unittest -v test_result_envelope_red_team
           python -B -m unittest -v test_result_envelope_v2_contract
           python -B -m unittest -v test_result_envelope_v2_golden_vectors
+          python -B -m unittest -v test_result_envelope_v2_security_review
