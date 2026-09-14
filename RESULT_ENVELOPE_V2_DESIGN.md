@@ -4,6 +4,8 @@ Status: **design only — not implemented, not merge-authorized**.
 
 This document proposes a versioned public replacement for the permissive `jarvis-result-envelope-v1` profile characterized in draft PR #4. It does not change or reinterpret v1.
 
+The executable test-first contract and pinned candidate resource limits are in `RESULT_ENVELOPE_V2_TEST_PLAN.md` and `test_result_envelope_v2_contract.py`. The test file is intentionally syntax-checked but not executed until the v2 implementation exists.
+
 ## Goals
 
 v2 should be a small, fail-closed result container that is deterministic to hash, explicit about execution identity, and difficult to misuse accidentally. It should not claim that evidence is authentic, that a process actually ran, or that a signature/receipt is trusted merely because a field is present.
@@ -156,15 +158,16 @@ belongs in separately versioned adapters. The v2 core builder/validator accepts 
 
 ## Resource limits
 
-The public reference profile should pin deterministic bounds before implementation, including:
+The initial public reference-profile candidate pins:
 
-- maximum canonical envelope bytes,
-- maximum nesting depth,
-- maximum object keys,
-- maximum list length,
-- maximum string bytes.
+- maximum canonical envelope bytes: `262144` (256 KiB),
+- maximum nesting depth: `16`,
+- maximum object keys per object: `128`,
+- maximum list length: `256`,
+- maximum generic canonical string bytes: `4096`,
+- maximum identity string bytes: `256`.
 
-Exceeding a limit fails closed. Limits are part of the profile and cannot be supplied by untrusted envelope data.
+Exceeding a limit fails closed. Limits are part of the profile and cannot be supplied by untrusted envelope data. Changing them after acceptance requires an explicit profile/protocol version decision.
 
 ## Required negative tests before implementation acceptance
 
