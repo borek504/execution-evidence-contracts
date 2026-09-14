@@ -21,7 +21,13 @@ Draft PR #4 additionally contains two Result Envelope tracks:
 - an exact characterization of the historical `jarvis-result-envelope-v1` profile,
 - a separate `execution-result-envelope-v2` candidate with negative-tests-first development.
 
-The v2 candidate is **not stable and not merge-authorized**. Its committed contract tests now execute in CI on Python 3.12 and 3.13 and pass against the first implementation candidate. Golden hash vectors, an independent second implementation, and security review remain required before merge consideration.
+The v2 candidate is **not stable and not merge-authorized**. Its committed contract tests execute in CI on Python 3.12 and 3.13 and pass against the first implementation candidate. Three golden hash vectors are now frozen and reproduced by a second independently written canonical encoder as well as the production encoder. Binary canonicalization, parser/resource-boundary review and independent security review remain required before merge consideration.
+
+Golden-vector material in the draft branch:
+
+- `RESULT_ENVELOPE_V2_GOLDEN_VECTORS.json`
+- `RESULT_ENVELOPE_V2_GOLDEN_VECTORS.md`
+- `test_result_envelope_v2_golden_vectors.py`
 
 ## Execution evidence validator
 
@@ -125,7 +131,7 @@ print(result.valid)
 
 ## Review and contribution
 
-Open issues intentionally ask for outside review of trust boundaries, adversarial cases, and safe profile generalization. See `CONTRIBUTING.md`, `SECURITY.md`, and the review issues before proposing security-sensitive changes.
+Open issues intentionally ask for outside review of trust boundaries, adversarial cases, safe profile generalization and Result Envelope v2 hardening. See `CONTRIBUTING.md`, `SECURITY.md`, and the review issues before proposing security-sensitive changes.
 
 ## License
 
