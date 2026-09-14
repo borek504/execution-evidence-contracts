@@ -1,25 +1,25 @@
-# Security policy
+# Security Policy
 
-This repository contains experimental validation contracts. Passing validation does not authenticate provenance, prove that work ran, prove isolation, or establish process/VM termination.
+This repository contains experimental validation contracts. A successful validation means only that supplied data satisfy the implemented contract. It does **not** establish authentic provenance, independent observation, process execution, isolation, termination, replay resistance, or release authority.
 
 ## Reporting
 
-Please open a GitHub issue for design-level security questions that can be discussed safely with synthetic examples.
+Please do not publish real credentials, API keys, private host details, personal data, or exploit material from unrelated systems in issues or pull requests.
 
-Do **not** post secrets, private credentials, personal data, production host details, or unrelated exploit material in public issues.
+For ordinary design weaknesses or synthetic fail-open cases, open a focused issue with a minimal self-contained reproducer. For a vulnerability that would create an immediate security risk for users, use GitHub's private vulnerability reporting if available rather than posting sensitive details publicly.
 
-For a vulnerability that requires sensitive reproduction material, contact the maintainer privately before publishing details.
+## Security-sensitive contribution rules
 
-## Current review focus
+Changes to trust boundaries, canonicalization, hashing, schema closure, identity binding, parser behavior, resource limits, termination semantics, or authorization-related fields require focused negative tests and review.
 
-Draft Result Envelope v2 work is intentionally not stable or merge-authorized. Security review is especially requested for:
+Do not:
 
-- canonical byte encoding and domain-separated hashing,
-- duplicate JSON key and Unicode normalization handling,
-- resource-limit bypasses,
-- timestamp and identity validation,
-- cross-attempt/unit substitution boundaries,
-- the diagnostic fallback used to hash deliberately invalid envelopes in tests,
-- any path where invalid data could become authoritative merely because its hash matches.
+- weaken or skip committed fail-closed tests just to make a change pass,
+- silently reinterpret historical v1 semantics,
+- regenerate accepted golden hashes merely to fit an implementation change,
+- treat matching digests or metadata labels as proof of trustworthy provenance,
+- add compatibility fallbacks to a core validator without explicit versioning.
 
-A successful validator result is never an authorization token.
+## Result Envelope v2 review gate
+
+Draft Result Envelope v2 remains non-authorizing and non-stable. Before merge consideration its binary canonicalization, resource limits, duplicate-key/NFC parser behavior and invalid-envelope diagnostic hashing must be reviewed independently. The frozen golden-vector set and second canonical encoder are regression evidence, not a substitute for security review.
