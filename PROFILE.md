@@ -1,32 +1,32 @@
-# Reference profile
+# Project profile
 
-This candidate preserves the original v1 semantics instead of generalizing them during extraction.
+`execution-evidence-contracts` is an experimental, standard-library-only Python project focused on fail-closed validation of execution evidence and result-data contracts for automated/agentic systems.
 
-## Closed schemas
+## Published main profile
 
-The accepted versions are:
+The public `main` branch contains the execution-evidence validator built around three independently supplied inputs:
 
-- `jarvis-r14-execution-record-v1`
-- `jarvis-r14-execution-expectations-v1`
-- `jarvis-r14-execution-verifier-context-v1`
+- an untrusted execution record,
+- expectations fixed before execution,
+- independent verifier observations.
 
-Unknown versions and unknown keys fail closed. There is no compatibility fallback or input repair.
+The validator checks consistency only. It does not authenticate provenance or grant execution/release authority.
 
-## Pinned policy values
+## Draft Result Envelope work
 
-The current profile requires evidence to declare Python `3.13.15` and binds these scope/network pairs:
+Draft PR #4 characterizes the historical v1 Result Envelope and develops a separate v2 candidate using a negative-tests-first process. The first v2 implementation passes its committed contract tests on Python 3.12 and 3.13, but it remains review-only.
 
-| Qualification scope | Network policy |
-| --- | --- |
-| `CANDIDATE_QUALIFICATION` | `LOCAL_LOOPBACK_ONLY_SEATBELT` |
-| `FINAL_REGRESSION` | `DENY_ALL` |
+Pending gates include deterministic golden hash vectors, independent reproduction, and security review of canonicalization, parser behavior, resource limits, and diagnostic hashing.
 
-These values come from the reference profile. They are not presented as universal requirements for unrelated systems.
+## Contribution focus
 
-## Trust boundary
+Useful reviews include:
 
-`record` is untrusted. `expected` must be fixed independently before execution. `verifier_context` must come from an observer outside candidate control.
+- trust-boundary misuse cases,
+- adversarial validation fixtures,
+- canonicalization/hash protocol review,
+- schema/profile versioning,
+- replay/substitution boundaries,
+- documentation and test consistency.
 
-The library compares data; it does not authenticate the caller or provenance, execute tests, inspect a host, verify log bytes, enforce network isolation, or terminate processes/VMs.
-
-A valid contract result therefore cannot be treated as a security or release authorization token.
+See `CONTRIBUTING.md` and `SECURITY.md` before submitting changes.
