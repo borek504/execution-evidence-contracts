@@ -1,20 +1,25 @@
-# Security
+# Security policy
 
-This project is an experimental data-consistency validator, not a sandbox or execution-isolation product.
-
-## Security-relevant non-goals
-
-A successful validation does **not** establish that:
-
-- tests actually ran or assertions were trustworthy,
-- the verifier was independent or authenticated,
-- files/logs referenced by digests were safely collected,
-- a network or filesystem isolation policy was really enforced,
-- a process tree, container, guest, or VM was actually terminated,
-- the candidate could not tamper with its environment.
+This repository contains experimental validation contracts. Passing validation does not authenticate provenance, prove that work ran, prove isolation, or establish process/VM termination.
 
 ## Reporting
 
-Please avoid posting sensitive credentials, host information, private logs, or exploit material that could expose an unrelated system in a public issue. For a security-sensitive finding, contact the maintainer privately through an appropriate channel before public disclosure.
+Please open a GitHub issue for design-level security questions that can be discussed safely with synthetic examples.
 
-A useful report should identify the affected schema/validation rule, provide a minimal synthetic reproducer, and explain whether the issue can cause malformed or contradictory evidence to validate.
+Do **not** post secrets, private credentials, personal data, production host details, or unrelated exploit material in public issues.
+
+For a vulnerability that requires sensitive reproduction material, contact the maintainer privately before publishing details.
+
+## Current review focus
+
+Draft Result Envelope v2 work is intentionally not stable or merge-authorized. Security review is especially requested for:
+
+- canonical byte encoding and domain-separated hashing,
+- duplicate JSON key and Unicode normalization handling,
+- resource-limit bypasses,
+- timestamp and identity validation,
+- cross-attempt/unit substitution boundaries,
+- the diagnostic fallback used to hash deliberately invalid envelopes in tests,
+- any path where invalid data could become authoritative merely because its hash matches.
+
+A successful validator result is never an authorization token.
