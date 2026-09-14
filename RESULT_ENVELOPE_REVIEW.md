@@ -1,43 +1,46 @@
 # Result Envelope candidate review
 
-This branch contains an **exact extraction** of the current `core_result_envelope.py` v1 profile from the private parent project, plus standalone characterization/red-team suites and a separate v2 candidate.
+This branch contains an exact extraction of the historical `core_result_envelope.py` v1 profile, its characterization/red-team suites, and a separately versioned v2 candidate.
 
-The branch is still **review-only and not approved for merge**.
+It remains a review candidate only. It is **not approved for merge** into `main`.
 
-## v1 characterization
+## v1 findings
 
-The extracted v1 code intentionally keeps the original `jarvis-result-envelope-v1` identifier and current semantics. A focused red-team suite reproduces eight current behaviors without changing them:
-
-1. unknown top-level fields can validate after rehashing,
-2. non-finite floats can be serialized and validated,
-3. malformed timestamps may be repaired by the builder,
-4. naive timestamp strings are interpreted as UTC,
-5. identity values can be coerced with `str(...)`,
-6. a non-string identity can validate after rehashing,
-7. evidence/provenance item contents are mostly opaque,
-8. the hash is raw SHA-256 over canonical JSON without a separate domain/version.
-
-These are characterization results, not endorsed public semantics.
+The historical v1 profile is preserved rather than silently changed. Characterization tests reproduce the observed permissive behaviors: unknown top-level fields after rehashing, non-finite floats, timestamp repair, naive timestamp UTC interpretation, identity coercion, non-string identity acceptance after rehash, opaque evidence/provenance item shapes, and raw SHA-256 canonical hashing without a separate domain/version.
 
 ## v2 candidate
 
-The versioned redesign lives in:
+The v2 contract was designed and tested negative-first before implementation. It now has:
 
-- `RESULT_ENVELOPE_V2_DESIGN.md`
-- `RESULT_ENVELOPE_V2_TEST_PLAN.md`
-- `test_result_envelope_v2_contract.py`
-- `result_envelope_v2.py`
+- closed top-level schema,
+- strict attempt/unit and identity binding,
+- explicit-timezone timestamps with no repair,
+- a float-free canonical data model,
+- NFC and duplicate-key protections,
+- typed evidence/provenance references,
+- deterministic resource limits,
+- a separate hash protocol and domain separator,
+- no automatic v1 migration or adapter fallbacks in core validation.
 
-The negative v2 contract tests were committed before the implementation. CI now executes them as real blockers on Python 3.12 and 3.13. The first implementation candidate passes the v2 contract together with the existing execution-contract and v1 suites.
+## Golden-vector checkpoint
 
-## Remaining blockers before any merge decision
+Three machine-readable candidate vectors are frozen in `RESULT_ENVELOPE_V2_GOLDEN_VECTORS.json` and documented in `RESULT_ENVELOPE_V2_GOLDEN_VECTORS.md`.
 
-- freeze deterministic golden hash vectors,
-- reproduce those vectors with an independent second implementation,
-- review the binary canonical encoding and resource limits,
-- review duplicate-key/NFC handling,
-- review diagnostic hashing for deliberately invalid envelopes,
-- perform an independent security review,
-- resolve findings without weakening or skipping the committed contract tests.
+`test_result_envelope_v2_golden_vectors.py` contains a second canonical encoder. Its independent computation path does not call the production encoder. The test then separately verifies that the production encoder reproduces the same canonical byte lengths, canonical-byte SHA-256 values and final domain-separated hashes.
 
-No code in this branch grants execution, validation, qualification, or release authority. A structurally valid envelope is still only a data-contract result, not proof that work ran or that evidence is authentic.
+This checkpoint is now part of CI on Python 3.12 and 3.13.
+
+## Remaining blockers before merge consideration
+
+1. Review the binary canonical encoding itself: type tags, framing, UTF-8 key ordering and int64 boundaries.
+2. Review resource-limit semantics, especially nesting and total canonical-size enforcement.
+3. Review duplicate-key and NFC-normalized-key collision behavior at the raw JSON decoder boundary.
+4. Review `_fallback_invalid_bytes` / diagnostic hashing so malformed data cannot acquire unintended semantic meaning.
+5. Perform an independent security review of the full v2 code + tests + vectors.
+6. Resolve findings without weakening/skipping the committed v2 contract tests or regenerating golden values to fit code changes.
+
+## Non-authority boundary
+
+Even a fully valid v2 envelope proves only conformance to this data contract. It does not authenticate evidence, prove execution, prove observer independence, prove isolation or process termination, prevent replay, or grant qualification/release authority.
+
+External review is welcome, especially around canonicalization portability, parser ambiguity, resource-boundary edge cases and hash-domain separation.
