@@ -79,9 +79,10 @@ class AtomicEvidenceStoreTests(unittest.TestCase):
         self.assertEqual(list(self.evidence_dir.glob(".evidence-*.tmp")), [])
 
     def test_publish_failure_is_fail_closed_and_cleans_temp(self):
-        with mock.patch("atomic_evidence_store.os.link", side_effect=OSError("no-link")):
-            with self.assertRaisesRegex(EvidenceStoreError, "EVIDENCE_ATOMIC_PUBLISH_FAILED"):
-                self.capture()
+        with mock.patch("atomic_evidence_store._require_platform_support", return_value=None):
+            with mock.patch("atomic_evidence_store.os.link", side_effect=OSError("no-link")):
+                with self.assertRaisesRegex(EvidenceStoreError, "EVIDENCE_ATOMIC_PUBLISH_FAILED"):
+                    self.capture()
         self.assertEqual(list(self.evidence_dir.glob("*.json")), [])
         self.assertEqual(list(self.evidence_dir.glob(".evidence-*.tmp")), [])
 
@@ -95,9 +96,10 @@ class AtomicEvidenceStoreTests(unittest.TestCase):
                 raise OSError("transient-unlink-failure")
             return real_unlink(*args, **kwargs)
 
-        with mock.patch("atomic_evidence_store.os.unlink", side_effect=flaky_unlink):
-            with self.assertRaisesRegex(EvidenceStoreError, "EVIDENCE_TEMP_CLEANUP_FAILED"):
-                self.capture()
+        with mock.patch("atomic_evidence_store._require_platform_support", return_value=None):
+            with mock.patch("atomic_evidence_store.os.unlink", side_effect=flaky_unlink):
+                with self.assertRaisesRegex(EvidenceStoreError, "EVIDENCE_TEMP_CLEANUP_FAILED"):
+                    self.capture()
         self.assertEqual(len(list(self.evidence_dir.glob("*.json"))), 1)
         self.assertEqual(list(self.evidence_dir.glob(".evidence-*.tmp")), [])
 
