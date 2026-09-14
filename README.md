@@ -14,19 +14,24 @@ It is intentionally small and uses only the Python standard library.
 
 ## Current status
 
-This is an experimental reference profile. The current schema names retain their original `jarvis-r14-*` identifiers so the first public version does not silently change semantics.
+`main` contains the first public execution-evidence validator profile.
 
-The profile currently pins:
+Draft PR #4 additionally contains two Result Envelope tracks:
 
-- `python_version == "3.13.15"` inside the validated evidence,
-- `CANDIDATE_QUALIFICATION -> LOCAL_LOOPBACK_ONLY_SEATBELT`,
-- `FINAL_REGRESSION -> DENY_ALL`.
+- an exact characterization of the historical `jarvis-result-envelope-v1` profile,
+- a separate `execution-result-envelope-v2` candidate with negative-tests-first development.
 
-Those are **profile rules**, not a claim that every user or every execution system should use those exact settings. Generalizing the profile is a separate design task.
+The v2 candidate is **not stable and not merge-authorized**. Its committed contract tests execute in CI on Python 3.12 and 3.13 and pass against the first implementation candidate. Three golden hash vectors are now frozen and reproduced by a second independently written canonical encoder as well as the production encoder. Binary canonicalization, parser/resource-boundary review and independent security review remain required before merge consideration.
 
-## What the validator checks
+Golden-vector material in the draft branch:
 
-The validator rejects unknown schema versions and keys, mismatched identities, incomplete or duplicate test inventories, unauthorized skips, failed or incomplete execution states, missing isolation-check/log inventories, report substitution, and termination data that does not bind to the expected attempt/unit/supervisor.
+- `RESULT_ENVELOPE_V2_GOLDEN_VECTORS.json`
+- `RESULT_ENVELOPE_V2_GOLDEN_VECTORS.md`
+- `test_result_envelope_v2_golden_vectors.py`
+
+## Execution evidence validator
+
+The published validator rejects unknown schema versions and keys, mismatched identities, incomplete or duplicate test inventories, unauthorized skips, failed or incomplete execution states, missing isolation-check/log inventories, report substitution, and termination data that does not bind to the expected attempt/unit/supervisor.
 
 `ContractValidation.qualification_authorized` is always `False`, and converting a result directly to `bool` raises `TypeError`. Callers must inspect `.valid` explicitly.
 
@@ -121,28 +126,13 @@ context = {
 }
 
 result = validate_execution_record(record, expected=expected, verifier_context=context)
-print(result.valid)                    # True
-print(result.qualification_authorized) # False
+print(result.valid)
 ```
 
-This example is synthetic. It does not authenticate `expected` or `verifier_context` and does not prove execution or isolation.
+## Review and contribution
 
-## Run the focused tests
-
-From this directory:
-
-```bash
-python -B -m unittest -v test_r14_execution_contract
-```
-
-The suite uses synthetic data and does not start a supervisor, VM, agent, network service, or private runtime.
-
-## Design boundary
-
-The validator is deliberately not an execution engine. A real deployment still needs a trusted component that establishes the origin of expectations and observations, safely collects artifacts, and proves whole-unit termination. Copying candidate-controlled values into the supposedly independent inputs defeats the intended trust boundary.
-
-See [PROFILE.md](PROFILE.md) for the current reference profile and [SECURITY.md](SECURITY.md) for security reporting and non-goals.
+Open issues intentionally ask for outside review of trust boundaries, adversarial cases, safe profile generalization and Result Envelope v2 hardening. See `CONTRIBUTING.md`, `SECURITY.md`, and the review issues before proposing security-sensitive changes.
 
 ## License
 
-Licensed under the **Apache License 2.0**. See [LICENSE](LICENSE).
+Apache License 2.0.

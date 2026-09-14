@@ -20,4 +20,12 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
       - name: Run focused unit tests
-        run: python -B -m unittest -v test_r14_execution_contract
+        run: |
+          python -B -m unittest -v test_r14_execution_contract
+          python -B -m unittest -v test_core_result_envelope
+          python -B -m unittest -v test_result_envelope_red_team
+          python -B -m unittest -v test_result_envelope_v2_contract
+          python -B -m unittest -v test_result_envelope_v2_golden_vectors
+          python -B -m unittest -v test_result_envelope_v2_security_review
+      - name: Verify frozen v2 vectors independently in Node.js
+        run: node verify_result_envelope_v2_vectors.mjs
