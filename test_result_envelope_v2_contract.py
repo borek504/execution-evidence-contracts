@@ -1,17 +1,8 @@
-"""Executable contract for Result Envelope v2 — tests first, implementation later.
-
-This file intentionally imports a module that does not exist yet. It is committed
-before the implementation so the desired fail-closed semantics are reviewable in
-code before they can be made green. CI syntax-checks this file but does not run
-it until the v2 implementation is added.
-"""
-
 from __future__ import annotations
 
 from copy import deepcopy
 from datetime import datetime, timedelta, timezone
 from hashlib import sha256
-import json
 import math
 import unittest
 
@@ -118,14 +109,20 @@ class ResultEnvelopeV2ContractTests(unittest.TestCase):
         self.assertInvalid(envelope, "MISSING_FIELD")
 
     def test_finite_float_rejected(self):
-        envelope = self.build(payload={"ratio": 1.25})
+        envelope = self.build()
+        envelope["payload"] = {"ratio": 1.25}
         self.assertInvalid(envelope, "FLOAT")
+        with self.assertRaises(ValueError):
+            self.build(payload={"ratio": 1.25})
 
     def test_nan_and_infinities_rejected(self):
         for value in (math.nan, math.inf, -math.inf):
             with self.subTest(value=value):
-                envelope = self.build(payload={"value": value})
+                envelope = self.build()
+                envelope["payload"] = {"value": value}
                 self.assertInvalid(envelope, "FLOAT")
+                with self.assertRaises(ValueError):
+                    self.build(payload={"value": value})
 
     def test_builder_rejects_malformed_timestamp_instead_of_repairing(self):
         with self.assertRaises(ValueError):
@@ -214,15 +211,18 @@ class ResultEnvelopeV2ContractTests(unittest.TestCase):
             decode_result_envelope_v2_json(text)
 
     def test_nfc_normalized_key_collision_rejected(self):
-        # U+00E9 versus U+0065 U+0301 normalize to the same NFC key.
-        envelope = self.build(payload={"é": 1, "e\u0301": 2})
+        envelope = self.build()
+        envelope["payload"] = {"é": 1, "e\u0301": 2}
         self.assertInvalid(envelope, "NORMALIZED_KEY_COLLISION")
+        with self.assertRaises(ValueError):
+            self.build(payload={"é": 1, "e\u0301": 2})
 
     def test_non_nfc_wire_string_rejected(self):
         envelope = self.build()
         envelope["payload"] = {"value": "e\u0301"}
-        self.rehash(envelope)
         self.assertInvalid(envelope, "NFC")
+        with self.assertRaises(ValueError):
+            self.build(payload={"value": "e\u0301"})
 
     def test_evidence_reference_shape_is_closed(self):
         envelope = self.build()
@@ -255,29 +255,44 @@ class ResultEnvelopeV2ContractTests(unittest.TestCase):
                 self.assertInvalid(envelope, field.upper())
 
     def test_string_resource_limit_is_enforced(self):
-        envelope = self.build(payload={"s": "x" * (MAX_STRING_BYTES + 1)})
+        envelope = self.build()
+        envelope["payload"] = {"s": "x" * (MAX_STRING_BYTES + 1)}
         self.assertInvalid(envelope, "STRING_LIMIT")
+        with self.assertRaises(ValueError):
+            self.build(payload={"s": "x" * (MAX_STRING_BYTES + 1)})
 
     def test_collection_resource_limit_is_enforced(self):
-        envelope = self.build(payload={"items": [0] * (MAX_COLLECTION_ITEMS + 1)})
+        envelope = self.build()
+        envelope["payload"] = {"items": [0] * (MAX_COLLECTION_ITEMS + 1)}
         self.assertInvalid(envelope, "COLLECTION_LIMIT")
+        with self.assertRaises(ValueError):
+            self.build(payload={"items": [0] * (MAX_COLLECTION_ITEMS + 1)})
 
     def test_object_key_resource_limit_is_enforced(self):
-        envelope = self.build(
-            payload={f"k{i}": i for i in range(MAX_OBJECT_KEYS + 1)}
-        )
+        oversized = {f"k{i}": i for i in range(MAX_OBJECT_KEYS + 1)}
+        envelope = self.build()
+        envelope["payload"] = oversized
         self.assertInvalid(envelope, "OBJECT_KEY_LIMIT")
+        with self.assertRaises(ValueError):
+            self.build(payload=oversized)
 
     def test_nesting_resource_limit_is_enforced(self):
         value = 0
         for _ in range(MAX_NESTING_DEPTH + 1):
             value = [value]
-        envelope = self.build(payload={"deep": value})
+        envelope = self.build()
+        envelope["payload"] = {"deep": value}
         self.assertInvalid(envelope, "DEPTH_LIMIT")
+        with self.assertRaises(ValueError):
+            self.build(payload={"deep": value})
 
     def test_total_canonical_size_limit_is_enforced(self):
-        envelope = self.build(payload={"blob": "x" * MAX_CANONICAL_BYTES})
+        oversized = {"blob": ["x" * MAX_STRING_BYTES for _ in range(70)]}
+        envelope = self.build()
+        envelope["payload"] = oversized
         self.assertInvalid(envelope, "ENVELOPE_SIZE")
+        with self.assertRaises(ValueError):
+            self.build(payload=oversized)
 
     def test_cross_attempt_and_unit_substitution_rejected_by_binding_check(self):
         envelope = self.build()
