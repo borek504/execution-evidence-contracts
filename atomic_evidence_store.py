@@ -5,12 +5,11 @@ persisted snapshot proves only that these bytes were written by this process to
 this directory. It does not prove that the diagnostic data are true,
 independently observed, or authorized for release/qualification decisions.
 
-The reference implementation is POSIX-oriented because it relies on directory
-file descriptors, fsync, no-follow opens, and hard-link publication to obtain a
-no-overwrite atomic publish step. Parent path components are assumed to be under
-the caller's administrative control; the leaf evidence directory and evidence
-files themselves are opened with no-follow semantics where the platform exposes
-them.
+The reference implementation is explicitly POSIX-only. It requires directory
+file descriptors, fsync, O_NOFOLLOW, O_DIRECTORY and hard-link publication to
+obtain private, no-overwrite atomic storage semantics. Parent path components
+are assumed to be under the caller's administrative control; the leaf evidence
+directory and evidence files themselves are opened with no-follow semantics.
 """
 
 from __future__ import annotations
@@ -54,6 +53,18 @@ class EvidenceStoreError(ValueError):
     """Fail-closed evidence-store contract error."""
 
 
+def _require_platform_support() -> None:
+    required_flags = ("O_NOFOLLOW", "O_DIRECTORY")
+    if os.name != "posix" or any(not hasattr(os, name) for name in required_flags):
+        raise EvidenceStoreError("EVIDENCE_PLATFORM_UNSUPPORTED")
+    if any(function not in os.supports_dir_fd for function in (os.open, os.link, os.unlink)):
+        raise EvidenceStoreError("EVIDENCE_PLATFORM_UNSUPPORTED")
+    if os.listdir not in os.supports_fd:
+        raise EvidenceStoreError("EVIDENCE_PLATFORM_UNSUPPORTED")
+    if os.link not in os.supports_follow_symlinks:
+        raise EvidenceStoreError("EVIDENCE_PLATFORM_UNSUPPORTED")
+
+
 def _require_text(value: Any, field: str) -> str:
     if type(value) is not str:
         raise EvidenceStoreError(f"{field.upper()}_TYPE_INVALID")
@@ -95,6 +106,15 @@ def _safe_component(value: str) -> str:
     return cleaned[:MAX_COMPONENT_CHARS] or "unknown"
 
 
+def _filename_for_snapshot(snapshot: Mapping[str, Any]) -> str:
+    captured = datetime.fromisoformat(str(snapshot["captured_at_utc"]).replace("Z", "+00:00"))
+    timestamp_prefix = captured.astimezone(timezone.utc).strftime("%Y%m%dT%H%M%S_%fZ")
+    return (
+        f"{timestamp_prefix}_{_safe_component(str(snapshot['subject_id']))}_"
+        f"{_safe_component(str(snapshot['issue']))}_{str(snapshot['evidence_id'])[:8]}.json"
+    )
+
+
 def _canonical_json_bytes(value: Any) -> bytes:
     try:
         text = json.dumps(
@@ -104,7 +124,7 @@ def _canonical_json_bytes(value: Any) -> bytes:
             separators=(",", ":"),
             allow_nan=False,
         )
-    except (TypeError, ValueError) as exc:
+    except (TypeError, ValueError, OverflowError, RecursionError) as exc:
         raise EvidenceStoreError("EVIDENCE_NOT_CANONICAL_JSON") from exc
     data = text.encode("utf-8")
     if len(data) > MAX_EVIDENCE_BYTES:
@@ -180,13 +200,22 @@ def _ensure_directory(path: Path) -> None:
 
 
 def _open_directory_fd(path: Path) -> int:
-    flags = os.O_RDONLY
-    flags |= getattr(os, "O_DIRECTORY", 0)
-    flags |= getattr(os, "O_NOFOLLOW", 0)
+    flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
     try:
-        return os.open(path, flags)
+        fd = os.open(path, flags)
     except OSError as exc:
         raise EvidenceStoreError("EVIDENCE_DIR_OPEN_FAILED") from exc
+    directory_stat = os.fstat(fd)
+    if not stat.S_ISDIR(directory_stat.st_mode):
+        os.close(fd)
+        raise EvidenceStoreError("EVIDENCE_DIR_INVALID")
+    if stat.S_IMODE(directory_stat.st_mode) != 0o700:
+        os.close(fd)
+        raise EvidenceStoreError("EVIDENCE_DIR_PERMISSIONS_INVALID")
+    if hasattr(os, "geteuid") and directory_stat.st_uid != os.geteuid():
+        os.close(fd)
+        raise EvidenceStoreError("EVIDENCE_DIR_OWNER_INVALID")
+    return fd
 
 
 def _write_all(fd: int, data: bytes) -> None:
@@ -230,6 +259,7 @@ def capture_evidence_snapshot(
     not as proof that no file exists.
     """
 
+    _require_platform_support()
     subject = _require_text(subject_id, "subject_id")
     issue_text = _require_text(issue, "issue")
     status_text = _optional_status(reported_status)
@@ -262,19 +292,13 @@ def capture_evidence_snapshot(
     directory = Path(evidence_dir)
     _ensure_directory(directory)
     dir_fd = _open_directory_fd(directory)
-
-    timestamp_prefix = captured.astimezone(timezone.utc).strftime("%Y%m%dT%H%M%S_%fZ")
-    filename = (
-        f"{timestamp_prefix}_{_safe_component(subject)}_"
-        f"{_safe_component(issue_text)}_{snapshot_id[:8]}.json"
-    )
+    filename = _filename_for_snapshot(payload)
     temp_name = f".evidence-{secrets.token_hex(16)}.tmp"
     temp_fd: int | None = None
     temp_exists = False
 
     try:
-        open_flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
-        open_flags |= getattr(os, "O_NOFOLLOW", 0)
+        open_flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW
         temp_fd = os.open(temp_name, open_flags, 0o600, dir_fd=dir_fd)
         temp_exists = True
         os.fchmod(temp_fd, 0o600)
@@ -333,13 +357,16 @@ def capture_evidence_snapshot(
 
 
 def _read_snapshot_name(dir_fd: int, name: str) -> tuple[dict[str, Any], str] | None:
-    flags = os.O_RDONLY
-    flags |= getattr(os, "O_NOFOLLOW", 0)
+    flags = os.O_RDONLY | os.O_NOFOLLOW
     file_fd: int | None = None
     try:
         file_fd = os.open(name, flags, dir_fd=dir_fd)
         file_stat = os.fstat(file_fd)
         if not stat.S_ISREG(file_stat.st_mode):
+            return None
+        if stat.S_IMODE(file_stat.st_mode) != 0o600:
+            return None
+        if hasattr(os, "geteuid") and file_stat.st_uid != os.geteuid():
             return None
         if file_stat.st_size > MAX_EVIDENCE_BYTES + 1:
             return None
@@ -347,7 +374,7 @@ def _read_snapshot_name(dir_fd: int, name: str) -> tuple[dict[str, Any], str] | 
         if data is None:
             return None
         payload = json.loads(data.decode("utf-8"))
-    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError, RecursionError):
         return None
     finally:
         if file_fd is not None:
@@ -361,9 +388,10 @@ def _read_snapshot_name(dir_fd: int, name: str) -> tuple[dict[str, Any], str] | 
         return None
     try:
         expected_bytes = _canonical_json_bytes(payload) + b"\n"
-    except EvidenceStoreError:
+        expected_name = _filename_for_snapshot(payload)
+    except (EvidenceStoreError, KeyError, TypeError, ValueError, RecursionError):
         return None
-    if data != expected_bytes:
+    if data != expected_bytes or name != expected_name:
         return None
     return payload, sha256(data).hexdigest()
 
@@ -375,6 +403,7 @@ def list_recent_evidence(
 ) -> list[dict[str, Any]]:
     """Return summaries of valid snapshots only; no writes are performed."""
 
+    _require_platform_support()
     if type(limit) is not int or isinstance(limit, bool) or not (1 <= limit <= MAX_LIST_LIMIT):
         raise EvidenceStoreError("EVIDENCE_LIMIT_INVALID")
 
