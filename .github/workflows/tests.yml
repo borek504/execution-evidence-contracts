@@ -24,5 +24,4 @@ jobs:
           python -B -m unittest -v test_r14_execution_contract
           python -B -m unittest -v test_core_result_envelope
           python -B -m unittest -v test_result_envelope_red_team
-      - name: Syntax-check pending v2 contract tests
-        run: python -B -m py_compile test_result_envelope_v2_contract.py
+          python -B -m unittest -v test_result_envelope_v2_contract
