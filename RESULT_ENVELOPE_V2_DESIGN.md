@@ -1,14 +1,22 @@
 # Result Envelope v2 design candidate
 
-Status: **design only — not implemented, not merge-authorized**.
+Status: **implementation candidate present — not stable, not merge-authorized**.
 
-This document proposes a versioned public replacement for the permissive `jarvis-result-envelope-v1` profile characterized in draft PR #4. It does not change or reinterpret v1.
+This document defines a versioned public replacement candidate for the permissive
+`jarvis-result-envelope-v1` profile characterized in draft PR #4. It does not
+change or reinterpret v1. The first implementation was written only after the
+negative contract suite had been committed.
 
-The executable test-first contract and pinned candidate resource limits are in `RESULT_ENVELOPE_V2_TEST_PLAN.md` and `test_result_envelope_v2_contract.py`. The test file is intentionally syntax-checked but not executed until the v2 implementation exists.
+The executable contract and pinned resource limits are in
+`RESULT_ENVELOPE_V2_TEST_PLAN.md` and `test_result_envelope_v2_contract.py`.
+CI now executes the v2 contract suite on Python 3.12 and 3.13.
 
 ## Goals
 
-v2 should be a small, fail-closed result container that is deterministic to hash, explicit about execution identity, and difficult to misuse accidentally. It should not claim that evidence is authentic, that a process actually ran, or that a signature/receipt is trusted merely because a field is present.
+v2 should be a small, fail-closed result container that is deterministic to hash,
+explicit about execution identity, and difficult to misuse accidentally. It
+should not claim that evidence is authentic, that a process actually ran, or
+that a signature/receipt is trusted merely because a field is present.
 
 ## Versioning and migration
 
@@ -18,7 +26,7 @@ v2 should be a small, fail-closed result container that is deterministic to hash
 - adapters are separately versioned and cannot silently widen the core schema.
 - unknown protocol/hash versions fail closed.
 
-Proposed identifiers:
+Identifiers:
 
 - `protocol_version = "execution-result-envelope-v2"`
 - `envelope_version = 2`
@@ -28,7 +36,7 @@ Proposed identifiers:
 
 Every field is required unless explicitly nullable; unknown fields are rejected.
 
-Proposed exact fields:
+Exact fields:
 
 - `protocol_version`
 - `envelope_version`
@@ -56,19 +64,26 @@ Proposed exact fields:
 - `resource_usage`
 - `result_hash`
 
-The v1 `signature_metadata` field is intentionally not in the initial v2 core. A signature profile should be separately specified and actually verified rather than represented as opaque metadata.
+The v1 `signature_metadata` field is intentionally not in the initial v2 core. A
+signature profile should be separately specified and actually verified rather
+than represented as opaque metadata.
 
 ## Identity rules
 
-`result_id`, `mission_id`, `attempt_id`, `unit_id`, `agent_id`, and `capability` must be non-empty strings. No `str(...)` coercion is allowed. `task_id` and `execution_id` are either non-empty strings or `null`.
+`result_id`, `mission_id`, `attempt_id`, `unit_id`, `agent_id`, and `capability`
+must be non-empty strings. No `str(...)` coercion is allowed. `task_id` and
+`execution_id` are either non-empty strings or `null`.
 
-Recommended reference-profile limits:
+Reference-profile limits:
 
 - UTF-8 string length: 1..256 bytes for identities,
 - no leading/trailing whitespace,
-- no control characters.
+- no control characters,
+- NFC-normalized wire strings.
 
-`attempt_id` and `unit_id` are required so a result can be bound to the execution evidence for the same attempt/unit. Replay detection remains the caller/store's responsibility; v2 does not claim to solve replay by itself.
+`attempt_id` and `unit_id` are required so a result can be bound to the execution
+evidence for the same attempt/unit. Replay detection remains the caller/store's
+responsibility; v2 does not claim to solve replay by itself.
 
 ## Timestamp rules
 
@@ -77,14 +92,16 @@ Required timestamps must be supplied explicitly.
 - invalid or missing timestamps fail,
 - timezone-naive inputs fail,
 - builders never substitute the current time for malformed data,
-- accepted timestamps are normalized to UTC,
+- accepted builder timestamps are normalized to UTC,
 - ordering is `started_at_utc <= finished_at_utc <= created_at_utc`.
 
-A builder may accept a timezone-aware `datetime` or an RFC 3339/ISO-8601 string with an explicit offset, but validation operates on the normalized wire representation only.
+The builder accepts a timezone-aware `datetime` or an ISO-8601 string with an
+explicit offset. Wire validation performs no time repair.
 
 ## Canonical data model
 
-To keep hashing portable and fail-closed, the initial v2 hash domain should reject values with unstable cross-language representation.
+The candidate hash domain rejects values with unstable cross-language
+representation.
 
 Allowed canonical values:
 
@@ -95,55 +112,70 @@ Allowed canonical values:
 - arrays of allowed canonical values
 - objects with string keys normalized to NFC
 
-Initial v2 should reject floating-point values entirely, including finite floats, `NaN`, and infinities. Metrics that require decimals should use integer base units or an explicitly versioned decimal-string convention in a later profile.
+The initial v2 candidate rejects floating-point values entirely, including finite
+floats, `NaN`, and infinities. Metrics that require decimals should use integer
+base units or an explicitly versioned decimal-string convention in a later
+profile.
 
-Duplicate object keys must be rejected by the decoder before a mapping is constructed. NFC-normalized key collisions must also be rejected.
+Duplicate object keys are rejected by the raw JSON decoder before a mapping is
+constructed. NFC-normalized key collisions are also rejected.
 
 ## Hash protocol
 
 `result_hash` is not included in its own hash input.
 
-Proposed domain separator:
+Domain separator:
 
 ```text
 EXECUTION-EVIDENCE-CONTRACTS\x00RESULT-ENVELOPE\x00V2\x00
 ```
 
-The hash is SHA-256 over:
+The candidate hash is SHA-256 over:
 
 1. the exact domain-separator bytes,
-2. canonical bytes of the unsigned envelope under `execution-result-envelope-hash-v1`.
+2. deterministic binary canonical bytes of the unsigned envelope under
+   `execution-result-envelope-hash-v1`.
 
-The canonical byte algorithm must be specified independently from ordinary display JSON. A normal `json.dumps(...)` call is not by itself the protocol definition.
+The implementation currently includes a diagnostic fallback inside
+`hash_unsigned_envelope_v2` so deliberately invalid envelopes can be re-hashed in
+negative tests. Matching that diagnostic hash never makes invalid data valid.
+This fallback itself requires review before the protocol can be considered
+stable.
 
-The implementation should publish golden vectors produced by an independent second implementation before v2 is considered stable.
+Golden vectors produced by this implementation and independently reproduced by a
+second implementation are still required before merge consideration.
 
 ## Evidence and provenance references
 
-The outer arrays are closed and typed. Each reference uses the exact object shape:
+The outer arrays are closed and typed. Each reference has exactly:
 
 - `reference_id`: non-empty string,
 - `reference_type`: one of a versioned closed vocabulary,
 - `sha256`: 64 lowercase hex characters,
 - `locator`: nullable string.
 
-A locator is descriptive only. A matching digest is still not proof that the referenced object was collected independently or is trustworthy.
+The first vocabulary is `ARTIFACT`, `LOG`, `SOURCE`, `RECEIPT`, `OTHER`.
 
-The first vocabulary can remain deliberately small, for example `ARTIFACT`, `LOG`, `SOURCE`, `RECEIPT`, `OTHER`.
+A locator is descriptive only. A matching digest is still not proof that the
+referenced object was collected independently or is trustworthy.
 
 ## Warnings and limitations
 
-`warnings` and `limitations` are lists of unique non-empty strings with explicit count/size limits. They are hashed but do not alter result status automatically.
+`warnings` and `limitations` are lists of unique non-empty strings subject to the
+profile resource limits. They are hashed but do not alter result status
+automatically.
 
 ## Metadata maps
 
-`payload`, `security_metadata`, `injection_metadata`, and `resource_usage` may remain application-shaped mappings, but every nested value must satisfy the canonical data model and size/depth limits. Their presence is not an authorization or security attestation.
-
-A future profile may close any of these mappings without changing the generic core.
+`payload`, `security_metadata`, `injection_metadata`, and `resource_usage` remain
+application-shaped mappings, but every nested value must satisfy the canonical
+data model and size/depth limits. Their presence is not an authorization or
+security attestation.
 
 ## Status and kind
 
-Both are exact uppercase strings from versioned closed vocabularies. Builders may provide separate convenience normalization outside the wire validator, but wire validation performs no case conversion or fallback.
+Both are exact uppercase strings from versioned closed vocabularies. Wire
+validation performs no case conversion or fallback.
 
 ## Adapter boundary
 
@@ -154,24 +186,27 @@ Compatibility behavior such as:
 - alternate result-id fields,
 - alternate evidence/provenance keys,
 
-belongs in separately versioned adapters. The v2 core builder/validator accepts only the v2 contract.
+belongs in separately versioned adapters. The v2 core builder/validator accepts
+only the v2 contract.
 
 ## Resource limits
 
-The initial public reference-profile candidate pins:
+The candidate profile pins:
 
-- maximum canonical envelope bytes: `262144` (256 KiB),
+- maximum canonical envelope bytes: `262144`,
 - maximum nesting depth: `16`,
-- maximum object keys per object: `128`,
+- maximum object keys: `128`,
 - maximum list length: `256`,
-- maximum generic canonical string bytes: `4096`,
-- maximum identity string bytes: `256`.
+- maximum generic string bytes: `4096`,
+- maximum identity bytes: `256`.
 
-Exceeding a limit fails closed. Limits are part of the profile and cannot be supplied by untrusted envelope data. Changing them after acceptance requires an explicit profile/protocol version decision.
+Exceeding a limit fails closed. Limits are part of the profile and cannot be
+supplied by untrusted envelope data.
 
-## Required negative tests before implementation acceptance
+## Test-first acceptance contract
 
-At minimum v2 tests must reject:
+`test_result_envelope_v2_contract.py` was committed before
+`result_envelope_v2.py`. It requires rejection of:
 
 1. unknown top-level fields,
 2. missing top-level fields,
@@ -185,7 +220,12 @@ At minimum v2 tests must reject:
 10. oversized/deep inputs,
 11. cross-attempt/unit substitution,
 12. v1 input presented to the v2 validator,
-13. adapter fallback behavior presented directly to the core validator.
+13. adapter fallback behavior presented directly to the core validator,
+14. lowercase wire status/kind,
+15. mutation/nondeterminism during validation.
+
+The first implementation candidate passes this suite on Python 3.12 and 3.13.
+That is conformance evidence only; it is not final protocol acceptance.
 
 ## Non-goals
 
@@ -201,12 +241,21 @@ v2 validation alone does not prove:
 
 Those guarantees require the surrounding execution-evidence/supervisor system.
 
-## Proposed acceptance sequence
+## Current acceptance sequence
 
-1. freeze this design after public review,
-2. add failing v2 negative tests first,
-3. implement a new v2 module without editing v1 semantics,
-4. add golden hash vectors and an independent implementation check,
-5. run CI on supported Python versions,
-6. perform independent security review,
-7. only then decide whether v2 is ready for merge to `main`.
+Completed in the draft branch:
+
+1. v1 behavior characterized,
+2. v2 design candidate published,
+3. negative v2 tests committed before implementation,
+4. first v2 implementation added,
+5. real v2 tests enabled in CI on Python 3.12 and 3.13.
+
+Still required:
+
+6. freeze golden hash vectors,
+7. reproduce those vectors with an independent second implementation,
+8. independent security review of canonicalization, limits, parser behavior and
+   diagnostic invalid-envelope hashing,
+9. resolve review findings without weakening the committed contract tests,
+10. only then decide whether v2 is ready for merge to `main`.
