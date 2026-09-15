@@ -12,6 +12,43 @@ It is intentionally small and uses only the Python standard library.
 
 > **Important:** `valid=True` means only that the supplied data satisfy this contract. It is **not** proof that tests actually ran, that the observer is authentic, that isolation succeeded, or that a process/VM really terminated. The result never grants release or qualification authority.
 
+## Quick Start
+
+Use **Python 3.12 or 3.13**. There are no third-party dependencies, API keys or
+installation steps. In a new checkout:
+
+```bash
+git clone https://github.com/borek504/execution-evidence-contracts.git
+cd execution-evidence-contracts
+python -B demo_execution_contract.py
+```
+
+The demo prints these three results, followed by explanations and error codes:
+
+```text
+[1] Consistent report: ACCEPTED (data only)
+[2] Wrong attempt: REJECTED
+[3] Missing required test: REJECTED
+```
+
+Every case prints `qualification_authorized=False`. The final line should be
+`Demo checks: 3/3 matched the expected outcomes.` Exit code 0 means the demo
+matched all three expected results, **including both rejections**; it does not
+mean three reports were accepted. An unexpected result exits with code 1.
+
+See [demo_execution_contract.py](demo_execution_contract.py) for complete,
+editable inputs and calls to `validate_execution_record`. The demo constructs
+example data in memory and prints to the terminal; it does not run the test
+workload described by those data or write evidence files.
+
+**What the rejection cases teach:** the wrong-attempt report keeps the expected
+identity fixed, and the incomplete report keeps the required test inventory
+fixed. Only the synthetic observed-report digest is refreshed to simulate receipt
+of each changed report. Matching that digest is not enough to pass validation.
+This fixture is not an evidence collector: a real integration must establish
+expectations and observations independently, not copy them from a candidate's
+report.
+
 ## Current status
 
 This is an experimental reference profile. The current schema names retain their original `jarvis-r14-*` identifiers so the first public version does not silently change semantics.
@@ -22,6 +59,9 @@ The profile currently pins:
 - `CANDIDATE_QUALIFICATION -> LOCAL_LOOPBACK_ONLY_SEATBELT`,
 - `FINAL_REGRESSION -> DENY_ALL`.
 
+The `python_version` value is a synthetic evidence-profile field, not a reading
+of your installed interpreter version.
+
 Those are **profile rules**, not a claim that every user or every execution system should use those exact settings. Generalizing the profile is a separate design task.
 
 ## What the validator checks
@@ -30,112 +70,17 @@ The validator rejects unknown schema versions and keys, mismatched identities, i
 
 `ContractValidation.qualification_authorized` is always `False`, and converting a result directly to `bool` raises `TypeError`. Callers must inspect `.valid` explicitly.
 
-## Minimal synthetic example
-
-```python
-from hashlib import sha256
-import json
-
-from r14_execution_contract import validate_execution_record
-
-
-def bindings():
-    return {
-        "attempt_id": "demo-attempt",
-        "unit_id": "demo-unit",
-        "candidate_identity_sha256": "1" * 64,
-        "source_commit": "2" * 40,
-        "source_manifest_sha256": "3" * 64,
-        "qualification_scope": "FINAL_REGRESSION",
-        "supervisor_sha256": "4" * 64,
-        "interpreter_sha256": "5" * 64,
-        "python_version": "3.13.15",
-        "dependency_manifest_sha256": "6" * 64,
-        "policy_sha256": "7" * 64,
-        "network_policy": "DENY_ALL",
-        "inventory_version": "demo-v1",
-        "host_identity_sha256": "8" * 64,
-        "guest_identity_sha256": None,
-    }
-
-
-def execution():
-    return {
-        "terminal_state": "SUCCEEDED",
-        "exit_code": 0,
-        "report_complete": True,
-        "timed_out": False,
-        "cancelled": False,
-    }
-
-
-record = {
-    "schema_version": "jarvis-r14-execution-record-v1",
-    "bindings": bindings(),
-    "tests": [{
-        "test_id": "demo.test",
-        "outcome": "PASS",
-        "skip_reason": None,
-        "skip_condition_id": None,
-    }],
-    "execution": execution(),
-    "isolation_checks": [{"check_id": "network", "outcome": "PASS"}],
-    "logs": [{"log_id": "stdout", "sha256": "9" * 64}],
-}
-
-expected = {
-    "schema_version": "jarvis-r14-execution-expectations-v1",
-    "bindings": bindings(),
-    "tests": [{
-        "test_id": "demo.test",
-        "allowed_outcomes": ["PASS"],
-        "required_native": False,
-        "skip_exception": None,
-    }],
-    "required_isolation_checks": ["network"],
-    "log_ids": ["stdout"],
-}
-
-context = {
-    "schema_version": "jarvis-r14-execution-verifier-context-v1",
-    "evidence_kind": "SYNTHETIC",
-    "record_sha256": sha256(json.dumps(
-        record,
-        sort_keys=True,
-        ensure_ascii=True,
-        separators=(",", ":"),
-        allow_nan=False,
-    ).encode("ascii")).hexdigest(),
-    "bindings": bindings(),
-    "execution": execution(),
-    "isolation_checks": [{"check_id": "network", "outcome": "PASS"}],
-    "logs": [{"log_id": "stdout", "sha256": "9" * 64}],
-    "satisfied_skip_conditions": [],
-    "termination": {
-        "attempt_id": "demo-attempt",
-        "unit_id": "demo-unit",
-        "supervisor_sha256": "4" * 64,
-        "state": "TERMINATED",
-        "receipt_sha256": "a" * 64,
-    },
-}
-
-result = validate_execution_record(record, expected=expected, verifier_context=context)
-print(result.valid)                    # True
-print(result.qualification_authorized) # False
-```
-
-This example is synthetic. It does not authenticate `expected` or `verifier_context` and does not prove execution or isolation.
-
-## Run the focused tests
-
-From this directory:
+## Run the tests
 
 ```bash
-python -B -m unittest -v test_r14_execution_contract
+python -B -m unittest -v test_r14_execution_contract test_demo_execution_contract
 ```
 
-The suite uses synthetic data and does not start a supervisor, VM, agent, network service, or private runtime.
+The existing 33 contract tests remain unchanged. Seven additional demo tests
+check the expected outcomes, error explanations, lack of authority and the
+nonzero exit gate. CI also runs the exact Quick Start demo command separately.
+All test data are synthetic; no supervisor, VM, agent, network service or private
+runtime is started.
 
 ## Design boundary
 
