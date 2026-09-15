@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: "Security reporting guidance"
+    url: "https://github.com/borek504/execution-evidence-contracts/blob/main/SECURITY.md"
+    about: "Read this before disclosing a sensitive finding; do not post private data."
+  - name: "Start contributing"
+    url: "https://github.com/borek504/execution-evidence-contracts/blob/main/CONTRIBUTING.md"
+    about: "Find a small first contribution and the project's review boundaries."
