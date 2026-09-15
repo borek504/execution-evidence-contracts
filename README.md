@@ -84,6 +84,9 @@ runtime is started.
 
 ## Design boundary
 
+For key definitions, see the [Glossary](docs/glossary.md).
+
+
 The validator is deliberately not an execution engine. A real deployment still needs a trusted component that establishes the origin of expectations and observations, safely collects artifacts, and proves whole-unit termination. Copying candidate-controlled values into the supposedly independent inputs defeats the intended trust boundary.
 
 See [PROFILE.md](PROFILE.md) for the current reference profile and [SECURITY.md](SECURITY.md) for security reporting and non-goals.
