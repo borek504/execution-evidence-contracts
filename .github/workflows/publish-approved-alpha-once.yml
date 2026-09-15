@@ -1,0 +1,236 @@
+name: Publish approved alpha once
+
+on:
+  push:
+    branches: [publish-v0.1.0-alpha.1-once]
+    paths: [.github/workflows/publish-approved-alpha-once.yml]
+
+permissions: {}
+
+concurrency:
+  group: publish-v0.1.0-alpha.1-once
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: github.repository == 'borek504/execution-evidence-contracts' && github.ref == 'refs/heads/publish-v0.1.0-alpha.1-once' && github.event_name == 'push'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      # No checkout or third-party action; published source is the pinned main commit.
+      - name: Verify approved source and publish one experimental release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_NOTES: |
+            **Experimental pre-release — not production-ready or independently security-audited.**
+
+            Source commit: `f0b98b7e8df01944ca2ccd6a38015865ff18b021`.
+
+            ## What this version contains
+
+            An intentionally small, Python-standard-library reference implementation for
+            checking consistency between an execution record, expectations fixed before
+            execution, and separately supplied verifier observations.
+
+            This initial experimental source release includes the existing
+            `r14_execution_contract.py`, its original 33 synthetic contract tests, the
+            three-case `demo_execution_contract.py`, seven demo regressions, a Quick Start,
+            profile and security documentation, and the Apache-2.0 license.
+
+            The onboarding change in [PR #12](https://github.com/borek504/execution-evidence-contracts/pull/12)
+            does not modify the validator or the original contract tests. It turns the long
+            README example into an executable demonstration and checks that demonstration
+            in CI. There are no third-party Python dependencies or API-key requirements.
+
+            ## Try the exact source release
+
+            Use Python 3.12 or 3.13 in a new checkout:
+
+            ```bash
+            git clone https://github.com/borek504/execution-evidence-contracts.git
+            cd execution-evidence-contracts
+            git checkout --detach f0b98b7e8df01944ca2ccd6a38015865ff18b021
+            python -B demo_execution_contract.py
+            python -B -m unittest -v test_r14_execution_contract test_demo_execution_contract
+            ```
+
+            These commands select the exact release commit. The tag `v0.1.0-alpha.1` points to that same source.
+            Use `python3` instead of `python` where that is the name of the chosen interpreter.
+            No package-manager installation or private runtime is required.
+
+            Expected demo summaries:
+
+            ```text
+            [1] Consistent report: ACCEPTED (data only)
+            [2] Wrong attempt: REJECTED
+            [3] Missing required test: REJECTED
+            ```
+
+            Every case reports `qualification_authorized=False`. The final message is
+            `Demo checks: 3/3 matched the expected outcomes.` Exit code 0 means all three
+            expected outcomes matched, including the two deliberate rejections.
+
+            ## Verified scope
+
+            The new post-merge [main push workflow 34968547115](https://github.com/borek504/execution-evidence-contracts/actions/runs/34968547115)
+            completed successfully at the exact target commit. Both actual job logs were
+            inspected: Ubuntu 24.04.5, CPython 3.12.14 and CPython 3.13.15. Each runs 33
+            contract tests and seven demo tests successfully, followed by the demo command.
+            No tests were reported skipped. Both checkouts identify the real main merge
+            commit, not a temporary PR merge ref.
+
+            This is verification of synthetic examples and contract tests on GitHub-hosted
+            Linux runners. It is not a production deployment, an independent security audit,
+            or macOS/Windows qualification. The seven demo tests include a check that an
+            unexpected acceptance still causes failure under Python optimization.
+
+            ## Experimental profile and limitations
+
+            The historical `jarvis-r14-*` schema identifiers are retained. The evidence
+            profile requires `python_version == "3.13.15"` inside the supplied evidence; this
+            is a profile rule, not measurement of the interpreter used to run this demo.
+            Scope/network mappings remain as documented in
+            [PROFILE.md](https://github.com/borek504/execution-evidence-contracts/blob/f0b98b7e8df01944ca2ccd6a38015865ff18b021/PROFILE.md).
+            The alpha label does not promise a stable API or production readiness.
+
+            **A valid result only means that supplied data satisfy the contract.** It does
+            not prove that tests ran, that observations or provenance are authentic, that
+            isolation or process termination succeeded, or that replay is prevented. It does
+            not grant execution, qualification or release authority. A real integration must
+            establish the trusted origins of expectations and observations independently.
+            The synthetic fixture is not an evidence collector.
+
+            Result Envelope v2 ([PR #4](https://github.com/borek504/execution-evidence-contracts/pull/4))
+            and Atomic Evidence Store ([PR #10](https://github.com/borek504/execution-evidence-contracts/pull/10))
+            are **not included**. Their separate review requirements are unaffected.
+
+            ## Feedback and license
+
+            For scoped synthetic findings, include the exact source commit, expected and
+            observed behavior, and a minimal reproducer. Do not post private credentials,
+            personal information, or unrelated system data. Follow
+            [SECURITY.md](https://github.com/borek504/execution-evidence-contracts/blob/f0b98b7e8df01944ca2ccd6a38015865ff18b021/SECURITY.md)
+            and [CONTRIBUTING.md](https://github.com/borek504/execution-evidence-contracts/blob/f0b98b7e8df01944ca2ccd6a38015865ff18b021/CONTRIBUTING.md).
+
+            Licensed under Apache-2.0. Prepared with AI assistance; internal review and CI
+            must not be described as independent third-party security acceptance.
+        run: |
+          set -euo pipefail
+          python3 -B - <<'PY'
+          """One approved public pre-release; no code checkout, edits or overwrite/retry."""
+          import json
+          import os
+          import urllib.error
+          import urllib.request
+
+          REPO = "borek504/execution-evidence-contracts"
+          BRANCH = "publish-v0.1.0-alpha.1-once"
+          TARGET = "f0b98b7e8df01944ca2ccd6a38015865ff18b021"
+          TREE = "461ddd0cd2830972d463db1bb2d87d6e5386a8b7"
+          TAG = "v0.1.0-alpha.1"
+          TITLE = "v0.1.0-alpha.1 — Experimental execution-evidence validator"
+          RUN = 34968547115
+
+
+          def require(ok, message):
+              if not ok:
+                  raise RuntimeError(message)
+
+
+          class NoRedirect(urllib.request.HTTPRedirectHandler):
+              def redirect_request(self, req, fp, code, msg, headers, newurl):
+                  raise RuntimeError("Unexpected API redirect; stopped")
+
+
+          def api(path, payload=None, optional=False):
+              require(path.startswith("/") and not path.startswith("//"), "Invalid API path")
+              headers = {
+                  "Accept": "application/vnd.github+json",
+                  "Authorization": "Bearer " + os.environ["GH_TOKEN"],
+                  "X-GitHub-Api-Version": "2022-11-28",
+                  "User-Agent": "execution-evidence-contracts-approved-release",
+              }
+              data = None if payload is None else json.dumps(payload).encode("utf-8")
+              if data is not None:
+                  headers["Content-Type"] = "application/json"
+              request = urllib.request.Request(
+                  "https://api.github.com/repos/" + REPO + path,
+                  data=data, headers=headers, method="GET" if data is None else "POST",
+              )
+              try:
+                  with urllib.request.build_opener(NoRedirect).open(request, timeout=25) as response:
+                      require(response.status == (200 if data is None else 201), "Unexpected status")
+                      return json.load(response)
+              except urllib.error.HTTPError as exc:
+                  if optional and payload is None and exc.code == 404:
+                      return None
+                  raise RuntimeError("API request failed, HTTP " + str(exc.code) + "; no write retry") from None
+
+
+          def verify_release(value, body):
+              require(value["tag_name"] == TAG and value["target_commitish"] == TARGET,
+                      "Release tag/target mismatch")
+              require(value["name"] == TITLE and value["body"].strip() == body,
+                      "Release title/body mismatch")
+              require(value["draft"] is False and value["prerelease"] is True,
+                      "Release must be a published pre-release")
+              require(value["published_at"] is not None and value["assets"] == [],
+                      "Unexpected publication state/assets")
+              ref = api("/git/ref/tags/" + TAG)
+              require(ref["object"]["type"] == "commit" and ref["object"]["sha"] == TARGET,
+                      "Actual tag target mismatch; no automatic repair")
+
+
+          def main():
+              require(os.environ.get("GITHUB_REPOSITORY") == REPO, "Wrong repository")
+              require(os.environ.get("GITHUB_REF") == "refs/heads/" + BRANCH, "Wrong branch")
+              require(os.environ.get("GITHUB_EVENT_NAME") == "push", "Wrong event")
+              body = os.environ["RELEASE_NOTES"].strip()
+              require(bool(body), "Missing release notes")
+              commit = api("/git/commits/" + TARGET)
+              require(commit["sha"] == TARGET and commit["tree"]["sha"] == TREE, "Source mismatch")
+              require(api("/git/ref/heads/main")["object"]["sha"] == TARGET, "Main moved; stopped")
+              ci = api("/actions/runs/" + str(RUN))
+              require(ci["head_sha"] == TARGET and ci["head_branch"] == "main"
+                      and ci["event"] == "push" and ci["status"] == "completed"
+                      and ci["conclusion"] == "success", "Pinned main CI is not successful")
+              jobs = api("/actions/runs/" + str(RUN) + "/jobs?per_page=100")
+              require(jobs["total_count"] == 2 and len(jobs["jobs"]) == 2, "Unexpected CI job count")
+              require({job["name"] for job in jobs["jobs"]} == {"unittest (3.12)", "unittest (3.13)"},
+                      "Wrong interpreter checks")
+              steps = {"Run focused unit tests", "Run demo regression tests", "Run Quick Start demo"}
+              for job in jobs["jobs"]:
+                  require(job["status"] == "completed" and job["conclusion"] == "success", "CI job failed")
+                  passed = {step["name"] for step in job["steps"]
+                            if step["status"] == "completed" and step["conclusion"] == "success"}
+                  require(steps <= passed, "Required CI step missing or unsuccessful")
+              existing = api("/releases/tags/" + TAG, optional=True)
+              if existing is not None:
+                  verify_release(existing, body)
+                  print("Existing exact pre-release verified; no changes made:", existing["html_url"])
+                  return
+              require(api("/git/ref/tags/" + TAG, optional=True) is None, "Tag already exists; stopped")
+              releases = api("/releases?per_page=100")
+              require(not any(item["tag_name"] == TAG for item in releases), "Draft/duplicate release exists")
+              require(api("/git/ref/heads/main")["object"]["sha"] == TARGET, "Main changed before write")
+              # The only write is this single release creation. Never retry an uncertain POST.
+              published = api("/releases", {
+                  "tag_name": TAG, "target_commitish": TARGET, "name": TITLE, "body": body,
+                  "draft": False, "prerelease": True, "make_latest": "false",
+                  "generate_release_notes": False,
+              })
+              verify_release(published, body)
+              readback = api("/releases/" + str(published["id"]))
+              verify_release(readback, body)
+              print(json.dumps({key: readback[key] for key in
+                                ("id", "html_url", "tag_name", "target_commitish", "draft", "prerelease", "published_at")},
+                               indent=2))
+
+
+          if __name__ == "__main__":
+              main()
+          PY
